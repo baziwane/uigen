@@ -1,6 +1,6 @@
 import type { FileNode } from "@/lib/file-system";
 import { VirtualFileSystem } from "@/lib/file-system";
-import { streamText, stepCountIs, type LanguageModel } from "ai";
+import { streamText, stepCountIs, convertToModelMessages, type LanguageModel, type UIMessage } from "ai";
 import { buildStrReplaceTool } from "@/lib/tools/str-replace";
 import { buildFileManagerTool } from "@/lib/tools/file-manager";
 import { prisma } from "@/lib/prisma";
@@ -13,16 +13,11 @@ export async function POST(req: Request) {
     messages,
     files,
     projectId,
-  }: { messages: any[]; files: Record<string, FileNode>; projectId?: string } =
+  }: { messages: UIMessage[]; files: Record<string, FileNode>; projectId?: string } =
     await req.json();
 
-  messages.unshift({
-    role: "system",
-    content: generationPrompt,
-    providerOptions: {
-      anthropic: { cacheControl: { type: "ephemeral" } },
-    },
-  });
+  // Convert UI messages to model messages
+  const modelMessages = await convertToModelMessages(messages);
 
   // Reconstruct the VirtualFileSystem from serialized data
   const fileSystem = new VirtualFileSystem();
@@ -31,7 +26,8 @@ export async function POST(req: Request) {
   const model = getLanguageModel() as LanguageModel;
   const result = streamText({
     model,
-    messages,
+    system: generationPrompt,
+    messages: modelMessages,
     maxOutputTokens: 10_000,
     stopWhen: stepCountIs(40),
     onError: (err: any) => {
